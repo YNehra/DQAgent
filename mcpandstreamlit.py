@@ -138,8 +138,19 @@ Include subtle, rare, or advanced domain-specific errors, even if they require d
 Use '---' to separate each issue.
 """
     data["messages"][1]["content"] = prompt
-    response = requests.post(url, headers=headers, data=json.dumps(data))
-    llm_reply = response.json()["choices"][0]["message"]["content"]
+
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response_json = response.json()
+        if "choices" in response_json and response_json["choices"]:
+            llm_reply = response_json["choices"][0]["message"]["content"]
+        else:
+            st.error("❌ LLM cross-file response structure unexpected.")
+            st.code(json.dumps(response_json, indent=2))
+            return []
+    except Exception as e:
+        st.error(f"❌ API call failed: {e}")
+        return []
 
     with open(output_txt, "w", encoding="utf-8") as f:
         f.write("Cross-file Analysis:\n")
@@ -170,8 +181,19 @@ Here is the table (showing up to {len(df)} rows):
 Use '---' to separate each issue.
 """
         data["messages"][1]["content"] = prompt
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        llm_reply = response.json()["choices"][0]["message"]["content"]
+
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response_json = response.json()
+            if "choices" in response_json and response_json["choices"]:
+                llm_reply = response_json["choices"][0]["message"]["content"]
+            else:
+                st.warning(f"⚠️ Unexpected LLM output for file: {os.path.basename(path)}")
+                st.code(json.dumps(response_json, indent=2))
+                continue
+        except Exception as e:
+            st.warning(f"⚠️ API error while analyzing file {path}: {e}")
+            continue
 
         with open(output_txt, "a", encoding="utf-8") as f:
             f.write(f"Analysis for file: {path}\n")
@@ -199,7 +221,6 @@ def analyze_databricks_tables(server_hostname, http_path, access_token):
         "temperature": 0.7
     }
 
-    # --- Cross-table analysis prompt ---
     prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
     for table in table_names:
         cursor.execute(f"SELECT * FROM {table} LIMIT 100")
@@ -228,8 +249,19 @@ Include subtle, rare, or advanced domain-specific errors, even if they require d
 Use '---' to separate each issue.
 """
     data["messages"][1]["content"] = prompt
-    response = requests.post(url, headers=headers, data=json.dumps(data))
-    llm_reply = response.json()["choices"][0]["message"]["content"]
+
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response_json = response.json()
+        if "choices" in response_json and response_json["choices"]:
+            llm_reply = response_json["choices"][0]["message"]["content"]
+        else:
+            st.error("❌ LLM response structure unexpected during cross-table analysis.")
+            st.code(json.dumps(response_json, indent=2))
+            return []
+    except Exception as e:
+        st.error(f"❌ Failed during cross-table analysis: {e}")
+        return []
 
     with open(output_txt, "w", encoding="utf-8") as f:
         f.write("Cross-table Analysis:\n")
@@ -263,8 +295,19 @@ Here is the table (up to {len(df)} rows):
 Use '---' to separate each issue.
 """
         data["messages"][1]["content"] = prompt
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        llm_reply = response.json()["choices"][0]["message"]["content"]
+
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response_json = response.json()
+            if "choices" in response_json and response_json["choices"]:
+                llm_reply = response_json["choices"][0]["message"]["content"]
+            else:
+                st.warning(f"⚠️ Unexpected LLM output for table: {table}")
+                st.code(json.dumps(response_json, indent=2))
+                continue
+        except Exception as e:
+            st.warning(f"⚠️ Error analyzing table {table}: {e}")
+            continue
 
         with open(output_txt, "a", encoding="utf-8") as f:
             f.write(f"Analysis for table: {table}\n")
