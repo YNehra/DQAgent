@@ -102,7 +102,7 @@ def extract_issues_from_txt(txt_file):
 def analyze_csv_files(file_paths):
     all_metrics = []
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
-    url = f"{azure_openai_endpoint}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-01-01-preview"
+    url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-04-01-preview"
     data = {
         "messages": [
             {"role": "system", "content": "You are an expert in the field of data quality analysis."},
@@ -140,7 +140,7 @@ Use '---' to separate each issue.
     data["messages"][1]["content"] = prompt
 
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response = requests.post(url, headers=headers, json=data)
         response_json = response.json()
         if "choices" in response_json and response_json["choices"]:
             llm_reply = response_json["choices"][0]["message"]["content"]
@@ -183,7 +183,7 @@ Use '---' to separate each issue.
         data["messages"][1]["content"] = prompt
 
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response = requests.post(url, headers=headers, json=data)
             response_json = response.json()
             if "choices" in response_json and response_json["choices"]:
                 llm_reply = response_json["choices"][0]["message"]["content"]
@@ -211,7 +211,7 @@ def analyze_databricks_tables(server_hostname, http_path, access_token):
 
     cursor = connection.cursor()
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
-    url = f"{azure_openai_endpoint}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-01-01-preview"
+    url = f"{azure_openai_endpoint}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-04-01-preview"
     data = {
         "messages": [
             {"role": "system", "content": "You are an expert in the field of data quality analysis."},
@@ -251,7 +251,7 @@ Use '---' to separate each issue.
     data["messages"][1]["content"] = prompt
 
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response = requests.post(url, headers=headers, json=data)
         response_json = response.json()
         if "choices" in response_json and response_json["choices"]:
             llm_reply = response_json["choices"][0]["message"]["content"]
@@ -297,7 +297,7 @@ Use '---' to separate each issue.
         data["messages"][1]["content"] = prompt
 
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response = requests.post(url, headers=headers, json=data)
             response_json = response.json()
             if "choices" in response_json and response_json["choices"]:
                 llm_reply = response_json["choices"][0]["message"]["content"]
