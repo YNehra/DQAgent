@@ -102,7 +102,7 @@ def extract_issues_from_txt(txt_file):
 def analyze_csv_files(file_paths):
     all_metrics = []
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
-    url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-04-01-preview"
+    url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-01-01-preview"
     data = {
         "messages": [
             {"role": "system", "content": "You are an expert in the field of data quality analysis."},
