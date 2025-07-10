@@ -248,6 +248,7 @@ Provide:
             response_json = response.json()
             if "choices" in response_json and response_json["choices"]:
                 llm_reply = response_json["choices"][0]["message"]["content"]
+                # Apply the fix to the dataset (if applicable)
                 return f"# Auto-fixed: {issue['title']}\n# Recommended Fix:\n{llm_reply}\n"
             else:
                 return f"# Auto-fix failed for issue: {issue['title']}\n# Details: {issue['details']}\n"
@@ -360,6 +361,12 @@ if st.session_state.issues:
         st.code(remediation_result)
 
     st.markdown("🎯 Pick another issue from the sidebar to continue your review.")
+
+# Toggle visibility of previously generated outputs
+if st.checkbox("Show/Hide Previous Outputs"):
+    if st.session_state.llm_output:
+        st.markdown("### Previous Outputs")
+        st.code(st.session_state.llm_output)
 
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
