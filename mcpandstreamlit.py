@@ -68,62 +68,56 @@ def compute_dynamic_metrics(df, table_name):
 
     return metrics
 
-# Function to extract issues from a text file
-def extract_issues_from_txt(txt_file):
-    issues = []
-    try:
-        with open(txt_file, "r", encoding="utf-8") as f:
-            content = f.read()
-            sections = re.split(r"(?=Analysis for file:|Analysis for table:)", content)
-            for section in sections:
-                if "Analysis for file:" in section or "Analysis for table:" in section:
-                    filename_match = re.search(r"Analysis for (file|table): (.*)", section)
-                    filename = filename_match.group(2).strip() if filename_match else "Unknown"
-                    issue_blocks = section.split("---")
-                    for block in issue_blocks:
-                        block = block.strip()
-                        if block:
-                            issue = {"file": filename}
-                            for line in block.splitlines():
-                                if line.startswith("- **Issue:**"):
-                                    issue["title"] = line.split("**Issue:**")[1].strip()
-                                elif line.startswith("- Details:"):
-                                    issue["details"] = line.split("Details:")[1].strip()
-                                elif line.startswith("- Expected correct state:"):
-                                    issue["expected"] = line.split("Expected correct state:")[1].strip()
-                                elif line.startswith("- Violated constraint:"):
-                                    issue["constraint"] = line.split("Violated constraint:")[1].strip()
-                                elif line.startswith("- Location:"):
-                                    issue["location"] = line.split("Location:")[1].strip()
-                            if "title" in issue:
-                                issues.append(issue)
-    except Exception as e:
-        st.error(f"Issue extraction error: {e}")
+# Function to analyze a single file
+def analyze_single_file(file_path):
+    df = pd.read_csv(file_path)
+    table_name = os.path.basename(file_path)
+    metrics = compute_dynamic_metrics(df, table_name)
 
-    return issues
+    prompt = f"""
+You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
 
-# Function to analyze CSV files
-def analyze_csv_files(file_paths):
-    all_metrics = []
+For each issue, provide:
+- **Issue:** [The title or short description of the issue]
+- **Details:** [A detailed explanation of the issue]
+- **Expected correct state:** [What the correct state should be]
+- **Violated constraint:** [Any violated constraints or standards]
+- **Location:** [Where the issue is located]
+
+Here is the table:
+
+{df.to_markdown(index=True)}
+
+Use '---' to separate each issue.
+"""
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
     url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
     data = {
         "messages": [
             {"role": "system", "content": "You are an expert in the field of data quality analysis."},
-            {"role": "user", "content": ""}
+            {"role": "user", "content": prompt}
         ],
         "max_tokens": max_tokens,
         "temperature": 0.7
     }
 
-    # Cross-file analysis
-    st.markdown("### Cross-file Analysis")
-    cross_file_output = ""
-    for path in file_paths:
-        df = pd.read_csv(path)
-        st.write(f"📄 **{os.path.basename(path)}** preview:")
-        st.dataframe(df.head())
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response_json = response.json()
+        if "choices" in response_json and response_json["choices"]:
+            llm_reply = response_json["choices"][0]["message"]["content"]
+            return metrics, llm_reply
+        else:
+            st.error("❌ Unexpected LLM response structure.")
+            st.code(json.dumps(response_json, indent=2))
+            return metrics, ""
+    except Exception as e:
+        st.error(f"❌ API call failed: {e}")
+        return metrics, ""
+    
 
+# Function to analyze multiple files (cross-file analysis)
+def analyze_cross_files(file_paths):
     prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
     for path in file_paths:
         df = pd.read_csv(path)
@@ -144,176 +138,31 @@ For each issue, provide:
 
 Use '---' to separate each issue.
 """
-    data["messages"][1]["content"] = prompt
-
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        response_json = response.json()
-        if "choices" in response_json and response_json["choices"]:
-            llm_reply = response_json["choices"][0]["message"]["content"]
-            cross_file_output = llm_reply
-            st.markdown("#### Cross-file Analysis Results")
-            st.text(llm_reply)
-        else:
-            st.error("❌ LLM cross-file response structure unexpected.")
-            st.code(json.dumps(response_json, indent=2))
-    except Exception as e:
-        st.error(f"❌ API call failed: {e}")
-
-    # Per-file analysis
-    st.markdown("### Per-file Analysis")
-    per_file_output = ""
-    for path in file_paths:
-        df = pd.read_csv(path)
-        table_name = os.path.basename(path)
-        all_metrics.extend(compute_dynamic_metrics(df, table_name))
-
-        prompt = f"""
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
-
-For each issue, provide:
-- **Issue:** [The title or short description of the issue]
-- **Details:** [A detailed explanation of the issue]
-- **Expected correct state:** [What the correct state should be]
-- **Violated constraint:** [Any violated constraints or standards]
-- **Location:** [Where the issue is located]
-
-Here is the table:
-
-{df.to_markdown(index=True)}
-
-Use '---' to separate each issue.
-"""
-        data["messages"][1]["content"] = prompt
-
-        try:
-            response = requests.post(url, headers=headers, json=data)
-            response_json = response.json()
-            if "choices" in response_json and response_json["choices"]:
-                llm_reply = response_json["choices"][0]["message"]["content"]
-                per_file_output += f"Analysis for file: {table_name}\n{llm_reply}\n\n"
-                st.markdown(f"#### Analysis for file: {table_name}")
-                st.text(llm_reply)
-            else:
-                st.warning(f"⚠️ Unexpected LLM output for file: {table_name}")
-                st.code(json.dumps(response_json, indent=2))
-        except Exception as e:
-            st.warning(f"⚠️ API error while analyzing file {table_name}: {e}")
-
-    # Provide download buttons for the outputs
-    st.download_button(
-        label="📥 Download Cross-file Analysis",
-        data=cross_file_output,
-        file_name="cross_file_analysis.txt",
-        mime="text/plain"
-    )
-    st.download_button(
-        label="📥 Download Per-file Analysis",
-        data=per_file_output,
-        file_name="per_file_analysis.txt",
-        mime="text/plain"
-    )
-
-    return all_metrics
-
-# Function to analyze Databricks tables
-def analyze_databricks_tables(server_hostname, http_path, access_token):
-    all_metrics = []
-    connection, table_names = get_database_tables(server_hostname, http_path, access_token)
-    if not connection:
-        return []
-
-    cursor = connection.cursor()
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
-    url = f"{azure_openai_endpoint}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-04-01-preview"
+    url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
     data = {
         "messages": [
             {"role": "system", "content": "You are an expert in the field of data quality analysis."},
-            {"role": "user", "content": ""}
+            {"role": "user", "content": prompt}
         ],
         "max_tokens": max_tokens,
         "temperature": 0.7
     }
 
-    prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
-    for table in table_names:
-        cursor.execute(f"SELECT * FROM {table} LIMIT 100")
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        df = pd.DataFrame(rows, columns=columns)
-        prompt += f"Dataset: {table}\n{df.to_markdown(index=True)}\n\n"
-
-    prompt += """
-For cross-file analysis, identify:
-- Relationships between datasets (e.g., shared fields, dependencies, or mismatches).
-- Domains and subdomains inferred from column names, sample values, and context.
-- Cross-file data quality issues (e.g., mismatched references, duplicate entries across files, or missing links).
-
-For each issue, provide:
-- **Issue:** [The title or short description of the issue]
-- **Details:** [A detailed explanation of the issue]
-- **Expected correct state:** [What the correct state should be]
-- **Violated constraint:** [Any violated constraints or standards]
-- **Location:** [Where the issue is located]
-
-Use '---' to separate each issue.
-"""
-    data["messages"][1]["content"] = prompt
-
     try:
         response = requests.post(url, headers=headers, json=data)
         response_json = response.json()
         if "choices" in response_json and response_json["choices"]:
             llm_reply = response_json["choices"][0]["message"]["content"]
-            st.markdown("#### Cross-table Analysis Results")
-            st.text(llm_reply)
+            return llm_reply
         else:
-            st.error("❌ LLM response structure unexpected during cross-table analysis.")
+            st.error("❌ Unexpected LLM response structure.")
             st.code(json.dumps(response_json, indent=2))
-            return []
+            return ""
     except Exception as e:
-        st.error(f"❌ Failed during cross-table analysis: {e}")
-        return []
-
-    for table in table_names:
-        cursor.execute(f"SELECT * FROM {table} LIMIT 100")
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        df = pd.DataFrame(rows, columns=columns)
-        all_metrics.extend(compute_dynamic_metrics(df, table))
-
-        prompt = f"""
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
-
-For each issue, provide:
-- **Issue:** [The title or short description of the issue]
-- **Details:** [A detailed explanation of the issue]
-- **Expected correct state:** [What the correct state should be]
-- **Violated constraint:** [Any violated constraints or standards]
-- **Location:** [Where the issue is located]
-
-Here is the table:
-
-{df.to_markdown(index=True)}
-
-Use '---' to separate each issue.
-"""
-        data["messages"][1]["content"] = prompt
-
-        try:
-            response = requests.post(url, headers=headers, json=data)
-            response_json = response.json()
-            if "choices" in response_json and response_json["choices"]:
-                llm_reply = response_json["choices"][0]["message"]["content"]
-                st.markdown(f"#### Analysis for table: {table}")
-                st.text(llm_reply)
-            else:
-                st.warning(f"⚠️ Unexpected LLM output for table: {table}")
-                st.code(json.dumps(response_json, indent=2))
-        except Exception as e:
-            st.warning(f"⚠️ Error analyzing table {table}: {e}")
-
-    return all_metrics
+        st.error(f"❌ API call failed: {e}")
+        return ""
+    
 
 # Streamlit UI
 st.set_page_config(page_title="🧹 Data Quality Copilot", layout="wide")
@@ -339,8 +188,30 @@ if mode == "📤 Upload CSV files":
             df.to_csv(file_path, index=False)
             file_paths.append(file_path)
 
-        if st.button("🔍 Analyze Uploaded Files"):
-            analyze_csv_files(file_paths)
+        # Per-file analysis button for each file
+        for file_path in file_paths:
+            if st.button(f"🔍 Analyze {os.path.basename(file_path)}"):
+                metrics, llm_reply = analyze_single_file(file_path)
+                st.markdown(f"### Analysis for file: {os.path.basename(file_path)}")
+                st.text(llm_reply)
+                st.download_button(
+                    label=f"📥 Download Analysis for {os.path.basename(file_path)}",
+                    data=llm_reply,
+                    file_name=f"{os.path.basename(file_path)}_analysis.txt",
+                    mime="text/plain"
+                )
+
+        # Cross-file analysis button
+        if st.button("🔍 Analyze Cross Files"):
+            llm_reply = analyze_cross_files(file_paths)
+            st.markdown("### Cross-file Analysis Results")
+            st.text(llm_reply)
+            st.download_button(
+                label="📥 Download Cross-file Analysis",
+                data=llm_reply,
+                file_name="cross_file_analysis.txt",
+                mime="text/plain"
+            )
 
 elif mode == "🛢️ Connect to Databricks":
     st.subheader("Enter Databricks Connection Info")
