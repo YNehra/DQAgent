@@ -33,7 +33,7 @@ def get_database_tables(server_hostname, http_path, access_token):
     except Exception as e:
         st.error(f"❌ Databricks connection failed: {e}")
         return None, []
-
+    
 # Function to compute dynamic metrics for a DataFrame
 def compute_dynamic_metrics(df, table_name):
     now = datetime.now(timezone.utc).isoformat()
@@ -141,9 +141,6 @@ For each issue, provide:
 - **Expected correct state:** [What the correct state should be]
 - **Violated constraint:** [Any violated constraints or standards]
 - **Location:** [Where the issue is located]
-- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
-
-Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
 
 Use '---' to separate each issue.
 """
@@ -180,12 +177,6 @@ For each issue, provide:
 - **Expected correct state:** [What the correct state should be]
 - **Violated constraint:** [Any violated constraints or standards]
 - **Location:** [Where the issue is located]
-- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
-
-Additionally:
-- Highlight any patterns or anomalies in the data.
-- Suggest improvements or transformations that could enhance data quality.
-- Identify potential risks or inconsistencies that could impact downstream processes.
 
 Here is the table:
 
@@ -264,9 +255,6 @@ For each issue, provide:
 - **Expected correct state:** [What the correct state should be]
 - **Violated constraint:** [Any violated constraints or standards]
 - **Location:** [Where the issue is located]
-- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
-
-Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
 
 Use '---' to separate each issue.
 """
@@ -303,12 +291,6 @@ For each issue, provide:
 - **Expected correct state:** [What the correct state should be]
 - **Violated constraint:** [Any violated constraints or standards]
 - **Location:** [Where the issue is located]
-- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
-
-Additionally:
-- Highlight any patterns or anomalies in the data.
-- Suggest improvements or transformations that could enhance data quality.
-- Identify potential risks or inconsistencies that could impact downstream processes.
 
 Here is the table:
 
