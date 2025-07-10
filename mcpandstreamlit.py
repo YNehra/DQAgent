@@ -98,18 +98,17 @@ def extract_issues_from_txt(txt_file):
 
 
 # ----------------------------------------------------------------------------------------------------------------- Part 4
-
 # Load secrets from Streamlit deployment
-azure_openai_api_key = st.secrets["api"]["azure_openai_api_key"]
-azure_openai_endpoint = st.secrets["api"]["azure_openai_endpoint"]
-azure_openai_deployment = st.secrets["api"]["azure_openai_deployment"]
-max_tokens = st.secrets["api"].get("max_tokens", 2000)  # Optional, with fallback
+azure_openai_api_key = st.secrets["azure_openai_api_key"]
+azure_openai_endpoint = st.secrets["azure_openai_endpoint"]
+azure_openai_deployment = st.secrets["azure_openai_deployment"]
+max_tokens = st.secrets.get("max_tokens", 2000)  # Optional, with fallback
 output_txt = "analysis_output.txt"
 
 def analyze_csv_files(file_paths):
     all_metrics = []
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
-    url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-01-01-preview"
+    url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
     data = {
         "messages": [
             {"role": "system", "content": "You are an expert in the field of data quality analysis."},
@@ -324,14 +323,6 @@ Use '---' to separate each issue.
     return all_metrics
 
 # -----------------------------------------------------------------------------------------------------------------
-
-# 🔐 Set your Azure OpenAI API credentials and output file path
-azure_openai_api_key = "A7bPfHr4l6gk6YO9BZd2wD8RNxL_P1wgVsF857P44zl23NrVzPJX0JQQJ99BFACYeBjFXJ3w3AAABACOGJNa6"
-azure_openai_endpoint = "https://definitivpoc.openai.azure.com"
-azure_openai_deployment = "gpt-4.1-mini"
-output_txt = "analysis_output.txt"
-max_tokens = 2000  # You can customize as needed
-
 st.set_page_config(page_title="🧹 Data Quality Copilot", layout="wide")
 st.title("🧠 Data Quality Chatbot")
 
