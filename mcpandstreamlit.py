@@ -102,7 +102,7 @@ Use '---' to separate each issue.
     except Exception as e:
         st.error(f"❌ API call failed: {e}")
         return metrics, ""
-    
+
 # Function to analyze multiple files (cross-file analysis)
 def analyze_cross_files(file_paths):
     prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
@@ -154,7 +154,68 @@ Use '---' to separate each issue.
     except Exception as e:
         st.error(f"❌ API call failed: {e}")
         return ""
-    
+
+# Function to analyze tables in Databricks
+def analyze_databricks_tables(server_hostname, http_path, access_token):
+    try:
+        connection = sql.connect(
+            server_hostname=server_hostname,
+            http_path=http_path,
+            access_token=access_token
+        )
+        cursor = connection.cursor()
+
+        # Fetch all tables in the default schema
+        cursor.execute("SHOW TABLES IN default")
+        tables = cursor.fetchall()
+        table_names = [row[1] for row in tables]
+
+        all_metrics = []
+        for table_name in table_names:
+            cursor.execute(f"SELECT * FROM {table_name}")
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            df = pd.DataFrame(rows, columns=columns)
+
+            # Compute metrics for each table
+            metrics = compute_dynamic_metrics(df, table_name)
+            all_metrics.extend(metrics)
+
+        return all_metrics
+    except Exception as e:
+        st.error(f"❌ Databricks connection failed: {e}")
+        return []
+
+# Function to extract issues from text file
+def extract_issues_from_txt(file_path):
+    try:
+        with open(file_path, "r") as file:
+            content = file.read()
+
+        # Parse issues from the text content
+        issues = []
+        for section in content.split("---"):
+            issue = {}
+            lines = section.strip().split("\n")
+            for line in lines:
+                if line.startswith("- **Issue:**"):
+                    issue["title"] = line.replace("- **Issue:**", "").strip()
+                elif line.startswith("- **Details:**"):
+                    issue["details"] = line.replace("- **Details:**", "").strip()
+                elif line.startswith("- **Expected correct state:**"):
+                    issue["expected"] = line.replace("- **Expected correct state:**", "").strip()
+                elif line.startswith("- **Violated constraint:**"):
+                    issue["constraint"] = line.replace("- **Violated constraint:**", "").strip()
+                elif line.startswith("- **Location:**"):
+                    issue["location"] = line.replace("- **Location:**", "").strip()
+            if issue:
+                issues.append(issue)
+
+        return issues
+    except Exception as e:
+        st.error(f"❌ Failed to extract issues from text: {e}")
+        return []
+
 # Function to apply remediation for selected issues
 def apply_remediation(issue, strategy, custom_fix=""):
     if strategy == "Auto-fix":
@@ -201,7 +262,7 @@ Provide:
 
     else:
         return "# No action taken.\n"
-    
+
 # Streamlit UI
 st.set_page_config(page_title="🧹 Data Quality Copilot", layout="wide")
 st.title("🧠 Data Quality Chatbot")
@@ -258,8 +319,17 @@ elif mode == "🛢️ Connect to Databricks":
     access_token = st.text_input("Access Token", type="password")
 
     if st.button("🔗 Connect & Analyze"):
+        # Analyze tables in Databricks
         all_metrics = analyze_databricks_tables(server_hostname, http_path, access_token)
-        st.session_state.issues = extract_issues_from_txt(os.path.join(TEMP_DIR, "analysis_output.txt"))
+
+        # Save metrics to a temporary file
+        metrics_file_path = os.path.join(TEMP_DIR, "analysis_output.txt")
+        with open(metrics_file_path, "w") as file:
+            for metric in all_metrics:
+                file.write(json.dumps(metric) + "\n")
+
+        # Extract issues from the saved metrics file
+        st.session_state.issues = extract_issues_from_txt(metrics_file_path)
         st.session_state.llm_output = "✅ Databricks analysis complete. Issues extracted."
 
 # Display Issues in Sidebar
@@ -294,4 +364,3 @@ if st.session_state.issues:
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
     st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
-
