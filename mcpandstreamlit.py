@@ -7,12 +7,6 @@ import json
 import requests
 from datetime import datetime, timezone
 import streamlit as st
-import pandas as pd
-import os
-import json
-import requests
-import re
-from datetime import datetime, timezone
 
 def get_database_tables(server_hostname, http_path, access_token):
     try:
@@ -96,15 +90,6 @@ def extract_issues_from_txt(txt_file):
 
     return issues
 
-
-# ----------------------------------------------------------------------------------------------------------------- Part 4
-# Load secrets from Streamlit deployment
-azure_openai_api_key = st.secrets["azure_openai_api_key"]
-azure_openai_endpoint = st.secrets["azure_openai_endpoint"]
-azure_openai_deployment = st.secrets["azure_openai_deployment"]
-max_tokens = st.secrets.get("max_tokens", 2000)  # Optional, with fallback
-output_txt = "analysis_output.txt"
-
 def analyze_csv_files(file_paths):
     all_metrics = []
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
@@ -118,15 +103,20 @@ def analyze_csv_files(file_paths):
         "temperature": 0.7
     }
 
-    # --- Cross-file analysis prompt ---
+    # --- Cross-file analysis ---
+    st.markdown("### Cross-file Analysis")
+    cross_file_output = ""
+    for path in file_paths:
+        df = pd.read_csv(path)
+        st.write(f"📄 **{os.path.basename(path)}** preview:")
+        st.dataframe(df.head())  # Display preview of the file
+
     prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
     for path in file_paths:
         df = pd.read_csv(path)
         prompt += f"Dataset: {os.path.basename(path)}\n{df.to_markdown(index=True)}\n\n"
 
     prompt += """
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided datasets and identify all possible cross-file data quality issues, domains, subdomains, and fields.
-
 For cross-file analysis, identify:
 - Relationships between datasets (e.g., shared fields, dependencies, or mismatches).
 - Domains and subdomains inferred from column names, sample values, and context.
@@ -150,25 +140,28 @@ Use '---' to separate each issue.
         response_json = response.json()
         if "choices" in response_json and response_json["choices"]:
             llm_reply = response_json["choices"][0]["message"]["content"]
+            if not llm_reply.strip():  # Check for empty output
+                st.warning("⚠️ Cross-file analysis returned an empty output.")
+            else:
+                cross_file_output = llm_reply
+                st.markdown("#### Cross-file Analysis Results")
+                st.text(llm_reply)  # Display the output directly
         else:
             st.error("❌ LLM cross-file response structure unexpected.")
             st.code(json.dumps(response_json, indent=2))
-            return []
     except Exception as e:
         st.error(f"❌ API call failed: {e}")
-        return []
 
-    with open(output_txt, "w", encoding="utf-8") as f:
-        f.write("Cross-file Analysis:\n")
-        f.write(llm_reply)
-        f.write("\n" + "=" * 80 + "\n")
-
+    # --- Per-file analysis ---
+    st.markdown("### Per-file Analysis")
+    per_file_output = ""
     for path in file_paths:
         df = pd.read_csv(path)
-        all_metrics.extend(compute_dynamic_metrics(df, os.path.basename(path)))
+        table_name = os.path.basename(path)
+        all_metrics.extend(compute_dynamic_metrics(df, table_name))
 
         prompt = f"""
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues, focusing on detailed and domain-specific errors and their source documents.
+You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
 
 For each issue, provide:
 - Issue: [The title or short description of the issue]
@@ -178,9 +171,12 @@ For each issue, provide:
 - Location: [Where the issue is located]
 - Guideline Violated: [Real world guideline or policy being violated, if applicable]
 
-Include subtle, rare, or advanced domain-specific errors along with the particular real world policy or guideline which is being violated. If unsure, explain your reasoning and what you would check in the real world.
+Additionally:
+- Highlight any patterns or anomalies in the data.
+- Suggest improvements or transformations that could enhance data quality.
+- Identify potential risks or inconsistencies that could impact downstream processes.
 
-Here is the table (showing up to {len(df)} rows):
+Here is the table:
 
 {df.to_markdown(index=True)}
 
@@ -193,136 +189,42 @@ Use '---' to separate each issue.
             response_json = response.json()
             if "choices" in response_json and response_json["choices"]:
                 llm_reply = response_json["choices"][0]["message"]["content"]
+                if not llm_reply.strip():  # Check for empty output
+                    st.warning(f"⚠️ Analysis for file {table_name} returned an empty output.")
+                else:
+                    per_file_output += f"Analysis for file: {table_name}\n{llm_reply}\n\n"
+                    st.markdown(f"#### Analysis for file: {table_name}")
+                    st.text(llm_reply)  # Display the output directly
             else:
-                st.warning(f"⚠️ Unexpected LLM output for file: {os.path.basename(path)}")
+                st.warning(f"⚠️ Unexpected LLM output for file: {table_name}")
                 st.code(json.dumps(response_json, indent=2))
-                continue
         except Exception as e:
-            st.warning(f"⚠️ API error while analyzing file {path}: {e}")
-            continue
+            st.warning(f"⚠️ API error while analyzing file {table_name}: {e}")
 
-        with open(output_txt, "a", encoding="utf-8") as f:
-            f.write(f"Analysis for file: {path}\n")
-            f.write(llm_reply)
-            f.write("\n" + "=" * 80 + "\n")
-
-    return all_metrics
-
-
-def analyze_databricks_tables(server_hostname, http_path, access_token):
-    all_metrics = []
-    connection, table_names = get_database_tables(server_hostname, http_path, access_token)
-    if not connection:
-        return []
-
-    cursor = connection.cursor()
-    headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
-    url = f"{azure_openai_endpoint}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2025-04-01-preview"
-    data = {
-        "messages": [
-            {"role": "system", "content": "You are an expert in the field of data quality analysis."},
-            {"role": "user", "content": ""}
-        ],
-        "max_tokens": max_tokens,
-        "temperature": 0.7
-    }
-
-    prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
-    for table in table_names:
-        cursor.execute(f"SELECT * FROM {table} LIMIT 100")
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        df = pd.DataFrame(rows, columns=columns)
-        prompt += f"Dataset: {table}\n{df.to_markdown(index=True)}\n\n"
-
-    prompt += """
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided datasets and identify all possible cross-file data quality issues, domains, subdomains, and fields.
-
-For cross-file analysis, identify:
-- Relationships between datasets (e.g., shared fields, dependencies, or mismatches).
-- Domains and subdomains inferred from column names, sample values, and context.
-- Cross-file data quality issues (e.g., mismatched references, duplicate entries across files, or missing links).
-
-For each issue, provide:
-- Issue: [The title or short description of the issue]
-- Details: [A detailed explanation of the issue]
-- Expected correct state: [What the correct state should be]
-- Violated constraint: [Any violated constraints or standards]
-- Location: [Where the issue is located]
-- Guideline Violated: [Real world guideline or policy being violated, if applicable]
-Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
-
-Use '---' to separate each issue.
-"""
-    data["messages"][1]["content"] = prompt
-
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        response_json = response.json()
-        if "choices" in response_json and response_json["choices"]:
-            llm_reply = response_json["choices"][0]["message"]["content"]
-        else:
-            st.error("❌ LLM response structure unexpected during cross-table analysis.")
-            st.code(json.dumps(response_json, indent=2))
-            return []
-    except Exception as e:
-        st.error(f"❌ Failed during cross-table analysis: {e}")
-        return []
-
-    with open(output_txt, "w", encoding="utf-8") as f:
-        f.write("Cross-table Analysis:\n")
-        f.write(llm_reply)
-        f.write("\n" + "=" * 80 + "\n")
-
-    for table in table_names:
-        cursor.execute(f"SELECT * FROM {table} LIMIT 100")
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        df = pd.DataFrame(rows, columns=columns)
-        all_metrics.extend(compute_dynamic_metrics(df, table))
-
-        prompt = f"""
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues, focusing on detailed and domain-specific errors and their source documents.
-
-For each issue, provide:
-- Issue: [The title or short description of the issue]
-- Details: [A detailed explanation of the issue]
-- Expected correct state: [What the correct state should be]
-- Violated constraint: [Any violated constraints or standards]
-- Location: [Where the issue is located]
-- Guideline Violated: [Real world guideline or policy being violated, if applicable]
-
-Include subtle, rare, or advanced domain-specific errors along with the particular real world policy or guideline which is being violated. If unsure, explain your reasoning and what you would check in the real world.
-
-Here is the table (up to {len(df)} rows):
-
-{df.to_markdown(index=True)}
-
-Use '---' to separate each issue.
-"""
-        data["messages"][1]["content"] = prompt
-
-        try:
-            response = requests.post(url, headers=headers, json=data)
-            response_json = response.json()
-            if "choices" in response_json and response_json["choices"]:
-                llm_reply = response_json["choices"][0]["message"]["content"]
-            else:
-                st.warning(f"⚠️ Unexpected LLM output for table: {table}")
-                st.code(json.dumps(response_json, indent=2))
-                continue
-        except Exception as e:
-            st.warning(f"⚠️ Error analyzing table {table}: {e}")
-            continue
-
-        with open(output_txt, "a", encoding="utf-8") as f:
-            f.write(f"Analysis for table: {table}\n")
-            f.write(llm_reply)
-            f.write("\n" + "=" * 80 + "\n")
+    # Provide download buttons for the outputs
+    st.download_button(
+        label="📥 Download Cross-file Analysis",
+        data=cross_file_output,
+        file_name="cross_file_analysis.txt",
+        mime="text/plain"
+    )
+    st.download_button(
+        label="📥 Download Per-file Analysis",
+        data=per_file_output,
+        file_name="per_file_analysis.txt",
+        mime="text/plain"
+    )
 
     return all_metrics
 
 # -----------------------------------------------------------------------------------------------------------------
+# Load secrets from Streamlit deployment
+azure_openai_api_key = st.secrets["azure_openai_api_key"]
+azure_openai_endpoint = st.secrets["azure_openai_endpoint"]
+azure_openai_deployment = st.secrets["azure_openai_deployment"]
+max_tokens = st.secrets.get("max_tokens", 2000)  # Optional, with fallback
+
+# Streamlit UI
 st.set_page_config(page_title="🧹 Data Quality Copilot", layout="wide")
 st.title("🧠 Data Quality Chatbot")
 
@@ -332,7 +234,7 @@ if "llm_output" not in st.session_state:
 if "issues" not in st.session_state:
     st.session_state.issues = []
 
-# -- Mode selection
+# Mode selection
 mode = st.radio("How would you like to provide data?", ["📤 Upload CSV files", "🛢️ Connect to Databricks"])
 
 if mode == "📤 Upload CSV files":
@@ -341,17 +243,13 @@ if mode == "📤 Upload CSV files":
     if uploaded_files:
         file_paths = []
         for file in uploaded_files:
-            df = pd.read_csv(file)
-            st.write(f"📄 **{file.name}** preview:")
-            st.dataframe(df.head())
             file_path = f"/tmp/{file.name}"
+            df = pd.read_csv(file)
             df.to_csv(file_path, index=False)
             file_paths.append(file_path)
 
         if st.button("🔍 Analyze Uploaded Files"):
-            all_metrics = analyze_csv_files(file_paths)
-            st.session_state.issues = extract_issues_from_txt(output_txt)
-            st.session_state.llm_output = "✅ Analysis complete. Issues extracted."
+            analyze_csv_files(file_paths)
 
 elif mode == "🛢️ Connect to Databricks":
     st.subheader("Enter Databricks Connection Info")
@@ -360,51 +258,4 @@ elif mode == "🛢️ Connect to Databricks":
     access_token = st.text_input("Access Token", type="password")
 
     if st.button("🔗 Connect & Analyze"):
-        # Use these user inputs later in your connection logic
-        all_metrics = analyze_databricks_tables(server_hostname, http_path, access_token)
-        st.session_state.issues = extract_issues_from_txt(output_txt)
-        st.session_state.llm_output = "✅ Databricks analysis complete. Issues extracted."
-
-# --------------------------------------------------------------------------------------- Part 2
-# --- Display LLM Output (if present) ---
-if st.session_state.llm_output:
-    st.markdown("### 🧾 LLM Output")
-    st.info(st.session_state.llm_output)
-
-# --- If issues exist, show sidebar navigator and details view ---
-if st.session_state.issues:
-    st.sidebar.header("📋 Issues Found")
-    idx = st.sidebar.selectbox("Select an issue to explore:",
-                               range(len(st.session_state.issues)),
-                               format_func=lambda i: f"{i+1}. {st.session_state.issues[i]['title']}")
-    
-    issue = st.session_state.issues[idx]
-
-    st.subheader(f"🔍 {issue['title']}")
-    st.markdown(f"**File:** `{issue.get('file', 'N/A')}`")
-    st.markdown(f"**Details:** {issue.get('details', 'N/A')}`")
-    st.markdown(f"**Expected State:** {issue.get('expected', 'N/A')}`")
-    st.markdown(f"**Violated Constraint:** {issue.get('constraint', 'N/A')}`")
-    st.markdown(f"**Location:** {issue.get('location', 'N/A')}`")
-    st.markdown("---")
-
-    strategy = st.radio("How should I fix this?", ["Auto-fix", "Add comment", "Custom"])
-    custom_fix = ""
-    if strategy == "Custom":
-        custom_fix = st.text_area("✍️ Describe your custom fix approach:")
-
-    if st.button("✅ Apply Fix"):
-        st.success("Fix simulated! (Non-destructive)")
-        if strategy == "Auto-fix":
-            st.code(f"# Auto-fixed: {issue['title']}")
-        elif strategy == "Add comment":
-            st.code(f"# TODO: Review issue: {issue['details']}")
-        elif strategy == "Custom":
-            st.code(f"# Custom Fix: {custom_fix}")
-
-    st.markdown("🎯 Pick another issue from the sidebar to continue your review.")
-
-# --- Fallback when nothing has been submitted yet ---
-elif not st.session_state.llm_output and not st.session_state.issues:
-    st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
-# --------------------------------------------------------------------------------------- Part 3
+        st.warning("Databricks analysis is not implemented in this example.")
