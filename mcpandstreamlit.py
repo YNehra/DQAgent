@@ -17,23 +17,6 @@ azure_openai_endpoint = st.secrets["azure_openai_endpoint"]
 azure_openai_deployment = st.secrets["azure_openai_deployment"]
 max_tokens = st.secrets.get("max_tokens", 2000)  # Optional, with fallback
 
-# Function to connect to Databricks and retrieve table names
-def get_database_tables(server_hostname, http_path, access_token):
-    try:
-        connection = sql.connect(
-            server_hostname=server_hostname,
-            http_path=http_path,
-            access_token=access_token
-        )
-        cursor = connection.cursor()
-        cursor.execute("SHOW TABLES IN default")
-        tables = cursor.fetchall()
-        table_names = [row[1] for row in tables]
-        return connection, table_names
-    except Exception as e:
-        st.error(f"❌ Databricks connection failed: {e}")
-        return None, []
-    
 # Function to compute dynamic metrics for a DataFrame
 def compute_dynamic_metrics(df, table_name):
     now = datetime.now(timezone.utc).isoformat()
@@ -84,6 +67,11 @@ For each issue, provide:
 - **Violated constraint:** [Any violated constraints or standards]
 - **Location:** [Where the issue is located]
 
+Additionally:
+- Highlight any patterns or anomalies in the data.
+- Suggest improvements or transformations that could enhance data quality.
+- Identify potential risks or inconsistencies that could impact downstream processes.
+
 Here is the table:
 
 {df.to_markdown(index=True)}
@@ -115,7 +103,6 @@ Use '---' to separate each issue.
         st.error(f"❌ API call failed: {e}")
         return metrics, ""
     
-
 # Function to analyze multiple files (cross-file analysis)
 def analyze_cross_files(file_paths):
     prompt = "You are a world-class data quality analyst. Analyze the relationships between the following datasets:\n\n"
@@ -135,6 +122,11 @@ For each issue, provide:
 - **Expected correct state:** [What the correct state should be]
 - **Violated constraint:** [Any violated constraints or standards]
 - **Location:** [Where the issue is located]
+
+Additionally:
+- Highlight any patterns or anomalies across datasets.
+- Suggest improvements or transformations that could enhance cross-file data quality.
+- Identify potential risks or inconsistencies that could impact downstream processes.
 
 Use '---' to separate each issue.
 """
@@ -163,7 +155,53 @@ Use '---' to separate each issue.
         st.error(f"❌ API call failed: {e}")
         return ""
     
+# Function to apply remediation for selected issues
+def apply_remediation(issue, strategy, custom_fix=""):
+    if strategy == "Auto-fix":
+        prompt = f"""
+You are a world-class data quality analyst and domain expert. Based on the following issue, provide a recommended fix.
 
+Issue:
+- **Title:** {issue['title']}
+- **Details:** {issue['details']}
+- **Expected correct state:** {issue['expected']}
+- **Violated constraint:** {issue['constraint']}
+- **Location:** {issue['location']}
+
+Provide:
+- **Recommended Fix:** [A detailed fix for the issue]
+"""
+        headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
+        url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
+        data = {
+            "messages": [
+                {"role": "system", "content": "You are an expert in the field of data quality analysis."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.7
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response_json = response.json()
+            if "choices" in response_json and response_json["choices"]:
+                llm_reply = response_json["choices"][0]["message"]["content"]
+                return f"# Auto-fixed: {issue['title']}\n# Recommended Fix:\n{llm_reply}\n"
+            else:
+                return f"# Auto-fix failed for issue: {issue['title']}\n# Details: {issue['details']}\n"
+        except Exception as e:
+            return f"# Auto-fix error for issue: {issue['title']}\n# Error: {e}\n"
+
+    elif strategy == "Add comment":
+        return f"# TODO: Review issue: {issue['details']}\n"
+
+    elif strategy == "Custom":
+        return f"# Custom Fix: {custom_fix}\n"
+
+    else:
+        return "# No action taken.\n"
+    
 # Streamlit UI
 st.set_page_config(page_title="🧹 Data Quality Copilot", layout="wide")
 st.title("🧠 Data Quality Chatbot")
@@ -224,11 +262,6 @@ elif mode == "🛢️ Connect to Databricks":
         st.session_state.issues = extract_issues_from_txt(os.path.join(TEMP_DIR, "analysis_output.txt"))
         st.session_state.llm_output = "✅ Databricks analysis complete. Issues extracted."
 
-# Display LLM Output
-if st.session_state.llm_output:
-    st.markdown("### 🧾 LLM Output")
-    st.info(st.session_state.llm_output)
-
 # Display Issues in Sidebar
 if st.session_state.issues:
     st.sidebar.header("📋 Issues Found")
@@ -252,16 +285,13 @@ if st.session_state.issues:
         custom_fix = st.text_area("✍️ Describe your custom fix approach:")
 
     if st.button("✅ Apply Fix"):
-        st.success("Fix simulated! (Non-destructive)")
-        if strategy == "Auto-fix":
-            st.code(f"# Auto-fixed: {issue['title']}")
-        elif strategy == "Add comment":
-            st.code(f"# TODO: Review issue: {issue['details']}")
-        elif strategy == "Custom":
-            st.code(f"# Custom Fix: {custom_fix}")
+        remediation_result = apply_remediation(issue, strategy, custom_fix)
+        st.success("Fix applied successfully!")
+        st.code(remediation_result)
 
     st.markdown("🎯 Pick another issue from the sidebar to continue your review.")
 
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
     st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
+
