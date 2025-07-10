@@ -7,6 +7,16 @@ import requests
 from datetime import datetime, timezone
 import streamlit as st
 
+# Ensure the temporary directory exists
+TEMP_DIR = os.path.join(os.getcwd(), "tmp")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Load secrets from Streamlit deployment
+azure_openai_api_key = st.secrets["azure_openai_api_key"]
+azure_openai_endpoint = st.secrets["azure_openai_endpoint"]
+azure_openai_deployment = st.secrets["azure_openai_deployment"]
+max_tokens = st.secrets.get("max_tokens", 2000)  # Optional, with fallback
+
 # Function to connect to Databricks and retrieve table names
 def get_database_tables(server_hostname, http_path, access_token):
     try:
@@ -125,6 +135,16 @@ For cross-file analysis, identify:
 - Domains and subdomains inferred from column names, sample values, and context.
 - Cross-file data quality issues (e.g., mismatched references, duplicate entries across files, or missing links).
 
+For each issue, provide:
+- **Issue:** [The title or short description of the issue]
+- **Details:** [A detailed explanation of the issue]
+- **Expected correct state:** [What the correct state should be]
+- **Violated constraint:** [Any violated constraints or standards]
+- **Location:** [Where the issue is located]
+- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
+
+Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
+
 Use '---' to separate each issue.
 """
     data["messages"][1]["content"] = prompt
@@ -153,6 +173,19 @@ Use '---' to separate each issue.
 
         prompt = f"""
 You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
+
+For each issue, provide:
+- **Issue:** [The title or short description of the issue]
+- **Details:** [A detailed explanation of the issue]
+- **Expected correct state:** [What the correct state should be]
+- **Violated constraint:** [Any violated constraints or standards]
+- **Location:** [Where the issue is located]
+- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
+
+Additionally:
+- Highlight any patterns or anomalies in the data.
+- Suggest improvements or transformations that could enhance data quality.
+- Identify potential risks or inconsistencies that could impact downstream processes.
 
 Here is the table:
 
@@ -225,6 +258,16 @@ For cross-file analysis, identify:
 - Domains and subdomains inferred from column names, sample values, and context.
 - Cross-file data quality issues (e.g., mismatched references, duplicate entries across files, or missing links).
 
+For each issue, provide:
+- **Issue:** [The title or short description of the issue]
+- **Details:** [A detailed explanation of the issue]
+- **Expected correct state:** [What the correct state should be]
+- **Violated constraint:** [Any violated constraints or standards]
+- **Location:** [Where the issue is located]
+- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
+
+Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
+
 Use '---' to separate each issue.
 """
     data["messages"][1]["content"] = prompt
@@ -253,6 +296,19 @@ Use '---' to separate each issue.
 
         prompt = f"""
 You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
+
+For each issue, provide:
+- **Issue:** [The title or short description of the issue]
+- **Details:** [A detailed explanation of the issue]
+- **Expected correct state:** [What the correct state should be]
+- **Violated constraint:** [Any violated constraints or standards]
+- **Location:** [Where the issue is located]
+- **Guideline Violated:** [Real-world guideline or policy being violated, if applicable]
+
+Additionally:
+- Highlight any patterns or anomalies in the data.
+- Suggest improvements or transformations that could enhance data quality.
+- Identify potential risks or inconsistencies that could impact downstream processes.
 
 Here is the table:
 
@@ -296,7 +352,7 @@ if mode == "📤 Upload CSV files":
     if uploaded_files:
         file_paths = []
         for file in uploaded_files:
-            file_path = f"/tmp/{file.name}"
+            file_path = os.path.join(TEMP_DIR, file.name)  # Save files in the temporary directory
             df = pd.read_csv(file)
             df.to_csv(file_path, index=False)
             file_paths.append(file_path)
@@ -312,7 +368,7 @@ elif mode == "🛢️ Connect to Databricks":
 
     if st.button("🔗 Connect & Analyze"):
         all_metrics = analyze_databricks_tables(server_hostname, http_path, access_token)
-        st.session_state.issues = extract_issues_from_txt("analysis_output.txt")
+        st.session_state.issues = extract_issues_from_txt(os.path.join(TEMP_DIR, "analysis_output.txt"))
         st.session_state.llm_output = "✅ Databricks analysis complete. Issues extracted."
 
 # Display LLM Output
