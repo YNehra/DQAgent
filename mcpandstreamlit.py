@@ -317,7 +317,7 @@ elif mode == "🛢️ Connect to Databricks":
 
     if st.button("🔗 Connect & Analyze"):
         # Analyze tables in Databricks
-        all_metrics = analyze_databricks_tables(server_hostname, http_path, access_token)
+        all_metrics = analyze_databricks_tables(server_hostname, http_path, access_token, database="default")
 
         # Save metrics to a temporary file
         metrics_file_path = os.path.join(TEMP_DIR, "analysis_output.txt")
@@ -367,4 +367,3 @@ if st.checkbox("Show/Hide Previous Outputs"):
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
     st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
-
