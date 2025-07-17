@@ -371,3 +371,34 @@ if st.checkbox("Show/Hide Previous Outputs"):
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
     st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
+
+from n8n_mcp_server import MCPTool, serve_tools
+
+class DataQualityTool(MCPTool):
+    def run(self, params):
+        file_paths = params.get("file_paths", [])
+        mode = params.get("mode", "single")
+        remediation = params.get("remediation", None)
+
+        # Single file analysis
+        if mode == "single" and file_paths:
+            metrics, llm_reply = analyze_single_file(file_paths[0])
+            return {"metrics": metrics, "llm_response": llm_reply}
+
+        # Cross file analysis
+        elif mode == "cross" and file_paths:
+            llm_reply = analyze_cross_files(file_paths)
+            return {"llm_response": llm_reply}
+
+        # Remediation
+        elif mode == "remediate" and remediation:
+            issue = remediation.get("issue")
+            strategy = remediation.get("strategy", "Auto-fix")
+            custom_fix = remediation.get("custom_fix", "")
+            fix_result = apply_remediation(issue, strategy, custom_fix)
+            return {"remediation_result": fix_result}
+
+        return {"error": "Invalid input or missing parameters"}
+
+# Register tool with n8n MCP server
+serve_tools([DataQualityTool()])
