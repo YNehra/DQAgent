@@ -58,19 +58,17 @@ def analyze_single_file(file_path):
     metrics = compute_dynamic_metrics(df, table_name)
 
     prompt = f"""
-You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues.
+You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues, focusing on detailed and domain-specific errors and their source documents.
 
 For each issue, provide:
-- **Issue:** [The title or short description of the issue]
-- **Details:** [A detailed explanation of the issue]
-- **Expected correct state:** [What the correct state should be]
-- **Violated constraint:** [Any violated constraints or standards]
-- **Location:** [Where the issue is located]
+- Issue: [The title or short description of the issue]
+- Details: [A detailed explanation of the issue]
+- Expected correct state: [What the correct state should be]
+- Violated constraint: [Any violated constraints or standards]
+- Location: [Where the issue is located]
+- Guideline Violated: [Real world guideline or policy being violated, if applicable]
 
-Additionally:
-- Highlight any patterns or anomalies in the data.
-- Suggest improvements or transformations that could enhance data quality.
-- Identify potential risks or inconsistencies that could impact downstream processes.
+Include subtle, rare, or advanced domain-specific errors along with the particular real world policy or guideline which is being violated. If unsure, explain your reasoning and what you would check in the real world.
 
 Here is the table:
 
@@ -111,24 +109,21 @@ def analyze_cross_files(file_paths):
         prompt += f"Dataset: {os.path.basename(path)}\n{df.to_markdown(index=True)}\n\n"
 
     prompt += """
+You are a world-class data quality analyst and domain expert. Your task is to analyze the provided datasets and identify all possible cross-file data quality issues, domains, subdomains, and fields.
+
 For cross-file analysis, identify:
 - Relationships between datasets (e.g., shared fields, dependencies, or mismatches).
 - Domains and subdomains inferred from column names, sample values, and context.
 - Cross-file data quality issues (e.g., mismatched references, duplicate entries across files, or missing links).
 
 For each issue, provide:
-- **Issue:** [The title or short description of the issue]
-- **Details:** [A detailed explanation of the issue]
-- **Expected correct state:** [What the correct state should be]
-- **Violated constraint:** [Any violated constraints or standards]
-- **Location:** [Where the issue is located]
-
-Additionally:
-- Highlight any patterns or anomalies across datasets.
-- Suggest improvements or transformations that could enhance cross-file data quality.
-- Identify potential risks or inconsistencies that could impact downstream processes.
-
-Use '---' to separate each issue.
+- Issue: [The title or short description of the issue]
+- Details: [A detailed explanation of the issue]
+- Expected correct state: [What the correct state should be]
+- Violated constraint: [Any violated constraints or standards]
+- Location: [Where the issue is located]
+- Guideline Violated: [Real world guideline or policy being violated, if applicable]
+Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
 """
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
     url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
