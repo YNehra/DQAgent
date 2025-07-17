@@ -151,12 +151,13 @@ Include subtle, rare, or advanced domain-specific errors, even if they require d
         return ""
 
 # Function to analyze tables in Databricks
-def analyze_databricks_tables(server_hostname, http_path, access_token):
+def analyze_databricks_tables(server_hostname, http_path, access_token, database="default"):
     try:
         connection = sql.connect(
             server_hostname=server_hostname,
             http_path=http_path,
-            access_token=access_token
+            access_token=access_token,
+            database=database
         )
         cursor = connection.cursor()
 
