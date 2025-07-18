@@ -1,4 +1,4 @@
-import sqlite3 as sql
+from databricks import sql
 import pandas as pd
 import re
 import os
@@ -367,3 +367,4 @@ if st.checkbox("Show/Hide Previous Outputs"):
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
     st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
+
