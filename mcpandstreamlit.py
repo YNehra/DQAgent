@@ -46,7 +46,6 @@ def compute_dynamic_metrics(df, table_name):
         if pd.api.types.is_numeric_dtype(col_data):
             entry["zero_values_pct"] = (col_data == 0).sum() / total_rows * 100
             entry["negative_values_pct"] = (col_data < 0).sum() / total_rows * 100
-
         metrics.append(entry)
 
     return metrics
@@ -68,6 +67,7 @@ For each issue, provide:
 - Location: [Where the issue is located]
 - Guideline Violated: [Real world guideline or policy being violated, if applicable]
 
+Simulate a research process to identify domain-specific issues. Go as deep as possible to uncover subtle, rare, or advanced errors that may not be immediately obvious.
 Include subtle, rare, or advanced domain-specific errors along with the particular real world policy or guideline which is being violated. If unsure, explain your reasoning and what you would check in the real world.
 
 Here is the table:
@@ -115,15 +115,10 @@ For cross-file analysis, identify:
 - Relationships between datasets (e.g., shared fields, dependencies, or mismatches).
 - Domains and subdomains inferred from column names, sample values, and context.
 - Cross-file data quality issues (e.g., mismatched references, duplicate entries across files, or missing links).
-
-For each issue, provide:
-- Issue: [The title or short description of the issue]
-- Details: [A detailed explanation of the issue]
-- Expected correct state: [What the correct state should be]
-- Violated constraint: [Any violated constraints or standards]
-- Location: [Where the issue is located]
-- Guideline Violated: [Real world guideline or policy being violated, if applicable]
-Include subtle, rare, or advanced domain-specific errors, even if they require deep expertise or simulated research.
+- Any domain specific implications once you identify the domains and subdomains.
+- Identify the industry the data belongs to and any relevant standards or guidelines that apply.
+Simulate a research process to identify the aforementioned things. Go as deep as possible to uncover subtle, rare, or advanced inferences that may not be immediately obvious.
+Include as many as you can, even if they require deep expertise or simulated research.
 """
     headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
     url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
@@ -367,4 +362,3 @@ if st.checkbox("Show/Hide Previous Outputs"):
 # Fallback when no data is submitted
 elif not st.session_state.llm_output and not st.session_state.issues:
     st.info("👋 Upload data or connect to Databricks above to begin your quality audit.")
-
