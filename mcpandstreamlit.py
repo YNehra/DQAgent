@@ -162,20 +162,66 @@ def analyze_databricks_tables(server_hostname, http_path, access_token, database
         table_names = [row[1] for row in tables]
 
         all_metrics = []
+        all_issues = {}
+
         for table_name in table_names:
             cursor.execute(f"SELECT * FROM {table_name}")
             rows = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description]
             df = pd.DataFrame(rows, columns=columns)
 
-            # Compute metrics for each table
+            # Compute metrics
             metrics = compute_dynamic_metrics(df, table_name)
             all_metrics.extend(metrics)
 
-        return all_metrics
+            # LLM-based domain-specific issue analysis
+            prompt = f"""
+You are a world-class data quality analyst and domain expert. Your task is to analyze the provided table and identify all possible data quality issues, focusing on detailed and domain-specific errors and their source documents.
+
+For each issue, provide:
+- Issue: [The title or short description of the issue]
+- Details: [A detailed explanation of the issue]
+- Expected correct state: [What the correct state should be]
+- Violated constraint: [Any violated constraints or standards]
+- Location: [Where the issue is located]
+- Guideline Violated: [Real world guideline or policy being violated, if applicable]
+
+Simulate a research process to identify domain-specific issues. Go as deep as possible to uncover subtle, rare, or advanced errors that may not be immediately obvious.
+
+Here is the table:
+
+{df.to_markdown(index=True)}
+
+Use '---' to separate each issue.
+"""
+            headers = {"api-key": azure_openai_api_key, "Content-Type": "application/json"}
+            url = f"{azure_openai_endpoint.rstrip('/')}/openai/deployments/{azure_openai_deployment}/chat/completions?api-version=2024-12-01-preview"
+            data = {
+                "messages": [
+                    {"role": "system", "content": "You are an expert in the field of data quality analysis."},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": max_tokens,
+                "temperature": 0.7
+            }
+
+            try:
+                response = requests.post(url, headers=headers, json=data)
+                response_json = response.json()
+                if "choices" in response_json and response_json["choices"]:
+                    llm_reply = response_json["choices"][0]["message"]["content"]
+                    all_issues[table_name] = llm_reply
+                else:
+                    all_issues[table_name] = "❌ LLM response was empty or malformed."
+            except Exception as e:
+                all_issues[table_name] = f"❌ LLM call failed: {e}"
+
+        return all_metrics, all_issues
+
     except Exception as e:
         st.error(f"❌ Databricks connection failed: {e}")
-        return []
+        return [], {}
+
 
 # Function to extract issues from text file
 def extract_issues_from_txt(file_path):
@@ -312,17 +358,19 @@ elif mode == "🛢️ Connect to Databricks":
 
     if st.button("🔗 Connect & Analyze"):
         # Analyze tables in Databricks
-        all_metrics = analyze_databricks_tables(server_hostname, http_path, access_token, database="default")
-
+        
+        metrics, issues = analyze_databricks_tables(server_hostname, http_path, access_token)
         # Save metrics to a temporary file
-        metrics_file_path = os.path.join(TEMP_DIR, "analysis_output.txt")
-        with open(metrics_file_path, "w") as file:
-            for metric in all_metrics:
-                file.write(json.dumps(metric) + "\n")
+        
+        st.subheader("📊 Data Quality Metrics")
+        st.dataframe(pd.DataFrame(metrics))
 
-        # Extract issues from the saved metrics file
-        st.session_state.issues = extract_issues_from_txt(metrics_file_path)
-        st.session_state.llm_output = "✅ Databricks analysis complete. Issues extracted."
+# Display LLM-generated issues
+        st.subheader("🧠 Domain-Specific Data Quality Issues")
+        for table, issue_text in issues.items():
+            st.markdown(f"### 🗂️ Table: `{table}`")
+            st.markdown(issue_text)
+
 
 # Display Issues in Sidebar
 if st.session_state.issues:
